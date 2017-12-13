@@ -12,6 +12,10 @@ public class ImageMark {
      * 经纬度,偏移量
      */
     public float lat, lng,xOffect,yOffect;
+    /**
+     * 附加参数
+     */
+    public Object data;
     public Bitmap markeBitmap;
     public float getXOfect(){
         return xOffect;

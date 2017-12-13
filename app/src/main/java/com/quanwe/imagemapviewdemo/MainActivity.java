@@ -52,6 +52,12 @@ public class MainActivity extends AppCompatActivity {
 
 //        生成一些测试点
         initTestData();
+        imgMapView.setOnMarkClickListener(new ImageMapView.OnMarkClickListener() {//添加监听
+            @Override
+            public void onMarkClick(ImageMark imageMark) {
+                Toast.makeText(MainActivity.this, "imageMark.data:" + imageMark.data, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     /**
@@ -68,7 +74,9 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < 2; i++) {
             float lat = (float) (latStart + Math.random() * (latEnd - latStart));//随机一些坐标
             float lng = (float) (lngStart + Math.random() * (lngEnd - lngStart));
-            imgMapView.addImageMark(createTestMark(lat,lng,markeBitmap));
+            ImageMark testMark = createTestMark(lat, lng, markeBitmap);
+            testMark.data="第"+i+"个点";
+            imgMapView.addImageMark(testMark);
         }
     }
 
