@@ -15,16 +15,23 @@
  *******************************************************************************/
 package com.quanwe;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Region;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.util.AttributeSet;
+import android.util.TypedValue;
+import android.view.MotionEvent;
+import android.view.View;
 import android.widget.ImageView;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,10 +39,12 @@ import java.util.List;
 
 /**
  * Created by WQ on 2017/9/8.
+ *
  * @Describe 图片地图控件
  * 结合可手势缩放的ImageView进行的扩展
  */
 
+@SuppressLint("AppCompatCustomView")
 public class ImageMapView extends ImageView implements IScaleView {
     private final ScaleViewAttacher mAttacher;
     private ScaleType mPendingScaleType;
@@ -44,26 +53,30 @@ public class ImageMapView extends ImageView implements IScaleView {
      * 地图所在范围的经纬度
      */
     private float posStartX = 0, posStartY = 0, posEndX = 0, posEndY = 0;
-    private  int ACCURACY=1;//精度
+    private int ACCURACY = 1;//精度
+    private  OnMarkClickListener onMarkClickListener;//标记点击监听
+    private float touchX, touchY;
     /**
-     * 点的集合
+     * 标记的集合
      */
     private List<ImageMark> pointList = new ArrayList<>();
 
-
+    private  boolean isDebug = false;//debug模式,绘制标记物及触摸的范围
+    private int touchAbleWidth = 0;//触摸检测的范围
 
     /**
-     * 设置地图经纬度所在区域
+     * 设置地图经纬度所在区域, 坐标系为普通坐标系时,所有的lat对应y lng对应x
+     *
      * @param latStart 起始经纬度(左上角)
      * @param lngStart
-     * @param latEnd 结束经纬度(右下角)
+     * @param latEnd   结束经纬度(右下角)
      * @param lngEnd
      */
     public void setMapRange(float latStart, float lngStart, float latEnd, float lngEnd) {
-        posStartY =latStart*ACCURACY;
-        posStartX=lngStart*ACCURACY;
-        posEndY=latEnd*ACCURACY;
-        posEndX=lngEnd*ACCURACY;
+        posStartY = latStart * ACCURACY;
+        posStartX = lngStart * ACCURACY;
+        posEndY = latEnd * ACCURACY;
+        posEndX = lngEnd * ACCURACY;
     }
 
     public ImageMapView(Context context) {
@@ -86,24 +99,27 @@ public class ImageMapView extends ImageView implements IScaleView {
         markePaint = new Paint();
         markePaint.setStyle(Paint.Style.STROKE);
         markePaint.setColor(Color.RED);
+        touchAbleWidth = dp2px( 15);
     }
 
     //===================================================地图标记=====================
 
     /**
      * 添加标记点
+     *
      * @param imageMark 标记
      */
-   public void  addImageMark(ImageMark imageMark){
-       pointList.add(imageMark);
-       invalidate();
-   }
+    public void addImageMark(ImageMark imageMark) {
+        pointList.add(imageMark);
+        invalidate();
+    }
 
     /**
      * 移除标记点
+     *
      * @param imageMark
      */
-    public void removeImageMark(ImageMark imageMark){
+    public void removeImageMark(ImageMark imageMark) {
         pointList.remove(imageMark);
         invalidate();
     }
@@ -111,18 +127,20 @@ public class ImageMapView extends ImageView implements IScaleView {
     /**
      * 清除所有标记
      */
-    public void clearAllImageMark(){
+    public void clearAllImageMark() {
         pointList.clear();
         invalidate();
     }
 
     /**
      * 获取所有标记
+     *
      * @return
      */
-    public List<ImageMark> getImageMarks(){
+    public List<ImageMark> getImageMarks() {
         return pointList;
     }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -130,23 +148,43 @@ public class ImageMapView extends ImageView implements IScaleView {
         if (drawable != null) {
             RectF matrixRect = getMatrixRect(getImageMatrix());
             for (ImageMark point : pointList) {
-                float xy[] = relativePostion( point.lng,point.lat);
-                canvas.drawBitmap(point.markeBitmap, xy[0]+point.getXOfect(), xy[1]+point.getYOfect(), markePaint);
+                float xy[] = relativePostion(point.lng, point.lat);
+                canvas.drawBitmap(point.markeBitmap, xy[0] + point.getXOfect(), xy[1] + point.getYOfect(), markePaint);
+
+                if (isDebug) {
+                    //测试代码
+                    Bitmap markeBitmap = point.markeBitmap;
+                    RectF mDisplayRect = new RectF();
+                    float left = xy[0] + point.getXOfect();
+                    float top = xy[1] + point.getYOfect();
+                    mDisplayRect.set(left, top, left + markeBitmap.getWidth(), top + markeBitmap.getHeight());
+                    canvas.drawRect(mDisplayRect, markePaint);
+                }
             }
-            canvas.drawRect(matrixRect, markePaint);
+            if (isDebug) {
+                canvas.drawRect(matrixRect, markePaint);
+            }
+        }
+        if (isDebug) {
+            if (touchY != 0) {
+                RectF mDisplayRect = new RectF();
+                mDisplayRect.set(touchX - touchAbleWidth, touchY - touchAbleWidth, touchX + touchAbleWidth, touchY + touchAbleWidth);
+                canvas.drawRect(mDisplayRect, markePaint);
+            }
         }
     }
 
     /**
      * 根据点的经纬度获取相对坐标
+     *
      * @param absX
      * @param absY
      * @return
      */
     private float[] relativePostion(float absX, float absY) {
 
-        absX=Math.abs(posStartX-absX*ACCURACY);//换算成画布上的坐标
-        absY=Math.abs(posStartY-absY*ACCURACY);
+        absX = Math.abs(posStartX - absX * ACCURACY);//换算成画布上的坐标
+        absY = Math.abs(posStartY - absY * ACCURACY);
         //根据缩放比,计算点的实际位置坐标
         RectF matrixRect = getMatrixRect(getImageMatrix());
         float width = Math.abs(posEndX - posStartX);
@@ -158,7 +196,55 @@ public class ImageMapView extends ImageView implements IScaleView {
         return new float[]{relativeX, relativeY};
     }
 
+    RectF tapRect = new RectF();
 
+    /**
+     * 设置标记物点击监听
+     * @param onMarkClickListener
+     */
+    public void setOnMarkClickListener(final OnMarkClickListener onMarkClickListener) {
+        this.onMarkClickListener = onMarkClickListener;
+        setOnViewTapListener(new ScaleViewAttacher.OnViewTapListener() {
+            @Override
+            public void onViewTap(View view, float x, float y) {
+                tapRect.set(x - touchAbleWidth, y - touchAbleWidth, x + touchAbleWidth, y + touchAbleWidth);
+
+                touchX = x;
+                touchY = y;
+                invalidate();
+                RectF pointRect = new RectF();
+                for (ImageMark imageMark : pointList) {
+                    float xy[] = relativePostion(imageMark.lng, imageMark.lat);
+                    float left = xy[0] + imageMark.getXOfect();
+                    float top = xy[1] + imageMark.getYOfect();
+                    Bitmap markeBitmap = imageMark.markeBitmap;
+                    pointRect.set(left, top, left + markeBitmap.getWidth(), top + markeBitmap.getHeight());
+
+
+                    if (checkRectCollsion(tapRect.left, tapRect.top, tapRect.width(), tapRect.height()
+                            , pointRect.left, pointRect.top, pointRect.width(), pointRect.height()
+                    )) {
+                        onMarkClickListener.onMarkClick(imageMark);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    //碰撞检测
+    public boolean checkRectCollsion(float x1, float y1, float w1, float h1, float x2, float y2, float w2, float h2) {
+        if (x1 >= x2 && x1 >= x2 + w2) {
+            return false;
+        } else if (x1 <= x2 && x1 + w1 <= x2) {
+            return false;
+        } else if (y1 >= y2 && y1 >= y2 + h2) {
+            return false;
+        } else if (y1 <= y2 && y1 + h1 <= y2) {
+            return false;
+        }
+        return true;
+    }
     //===============================缩放相关========================================
 
     public void setOnClickListener(OnClickListener listener) {
@@ -300,6 +386,19 @@ public class ImageMapView extends ImageView implements IScaleView {
     protected void onDetachedFromWindow() {
         mAttacher.cleanup();
         super.onDetachedFromWindow();
+    }
+    /**
+     * dp转px
+     *
+     * @param dp
+     * @return
+     */
+    public  int dp2px( int dp) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp,
+                getResources().getDisplayMetrics());
+    }
+    public interface OnMarkClickListener {
+        void onMarkClick(ImageMark imageMark);
     }
 
 }
